@@ -6,20 +6,6 @@
 #include "functions.h"
 #include "clike.tab.h"
 
-/*
-#define LITERAL 0;
-#define ARRAY 1;
-#define FUNCTION 2;
-#define FUN_PROT 3;
-
-#define VOID_TYPE 0;
-#define CHAR_TYPE 1;
-#define INT_TYPE 2;
-#define FLOAT_TYPE 3;
-#define BOOL_TYPE 4;
-#define NONE_TYPE 5;
-*/
-
 int currType;
 int returnType;
 bool hasReturn;
@@ -124,7 +110,7 @@ fprotType *createFprotType( PrimitiveType returnType, idList *argIdList ) {
 }
 
 bool symbolExists( symbolTable *t, char *symbol ) {
-	char c = symbol[0];
+	int c = hash(symbol);
 	symbolNode *curr = t->array[c % TABLESIZE];
 	while( curr != NULL ) {
 		if( strcmp(curr->symbol, symbol) == 0 ) {
@@ -136,7 +122,7 @@ bool symbolExists( symbolTable *t, char *symbol ) {
 }
 
 symbolNode *getSymbol( symbolTable *t, char *symbol, SymbolType type ) {
-	char c = symbol[0];
+	int c = hash(symbol);
 	symbolNode *curr = t->array[c % TABLESIZE];
 	while( curr != NULL ) {
 		if( curr->type == type && strcmp(curr->symbol, symbol) == 0 ) {
@@ -167,7 +153,7 @@ void addSymbol( symbolTable *t, symbolNode *symNode ) {
 				} else {
 					yyerror("Return type mismatch with prototype");
 				}
-				char c = symNode->symbol[0];
+				int c = hash(symNode->symbol);
 				symNode->nextSymNode = t->array[c % TABLESIZE];
 				t->array[c % TABLESIZE] = symNode;
 			} else {
@@ -179,8 +165,7 @@ void addSymbol( symbolTable *t, symbolNode *symNode ) {
 			yyerror("Symbol already declared");
 		}
 	} else {
-		char c = symNode->symbol[0];
-		
+		int c = hash(symNode->symbol);
 		symNode->nextSymNode = t->array[c % TABLESIZE];
 		t->array[c % TABLESIZE] = symNode;
 	}
@@ -244,7 +229,7 @@ void updateTypes( idList *list, symbolTable *t ) {
 
 	while( list != NULL ) {
 		char *symbol = list->symbol;
-		char c = symbol[0];
+		int c = hash(symbol);
 		
 		symbolNode *curr = t->array[c % TABLESIZE];
 		while( curr != NULL ) {
@@ -310,31 +295,31 @@ PrimitiveType literalTypeOf( char *symbol ) {
 PrimitiveType binaryExpressionType( PrimitiveType t1, PrimitiveType t2, OperatorType op ) {
 	if( t1 == ERROR_TYPE || t2 == ERROR_TYPE ) {
 		return ERROR_TYPE;
-	} else if( op == COMPARISON ) {
+	}
+	switch(op) {
+	case COMPARISON:
 		if( areCompatible( t1, t2 ) && ( t1 == CHAR_TYPE || t1 == INT_TYPE || t1 == FLOAT_TYPE ) )
 			return BOOL_TYPE;
 		else {
 			yyerror("Incompatible types");
 			return ERROR_TYPE;
 		}
-	} else if ( op == ARITHMETIC ) {
+	case ARITHMETIC:
 		if( areCompatible( t1, t2 ) && ( t1 == CHAR_TYPE || t1 == INT_TYPE || t1 == FLOAT_TYPE ) )
-			if( t1 == CHAR_TYPE || t1 == INT_TYPE )
-				return INT_TYPE;
-			else
-				return FLOAT_TYPE;
+			if( t1 == CHAR_TYPE || t1 == INT_TYPE ) return INT_TYPE;
+			else return FLOAT_TYPE;
 		else {
 			yyerror("Incompatible types");
 			return ERROR_TYPE;
 		}
-	} else if ( op == LOGICAL ) {
+	case LOGICAL:
 		if( t1 == BOOL_TYPE && t2 == BOOL_TYPE )
 			return BOOL_TYPE;
 		else {
 			yyerror("Incompatible types");
 			return ERROR_TYPE;
 		}
-	} else {
+	default:
 		return ERROR_TYPE;
 	}
 }
@@ -397,6 +382,16 @@ void checkReturn() {
 	hasReturn = false;
 }
 
+int hash( char *str ) {
+	char *ptr = str;
+	char c;
+	int i = 0;
+	while( c = *ptr++ ) {
+		i += c;
+	}
+	return i;
+}
+
 void yyerror(char *s) {
 	error = 1;
 	fprintf(stderr, "Error from %d:%d to %d:%d: %s\n", yylloc.first_line, yylloc.first_column, yylloc.last_line, yylloc.last_column, s);
@@ -433,6 +428,7 @@ astNode makeASTNode(NodeType type) {
 	astNode *n = malloc(sizeof(astNode));
 	n->type = type;
 	n->primType = VOID_TYPE;
+	n->location = NULL;
 	return n;
 }
 
@@ -441,8 +437,12 @@ astNode makeASTNode(NodeType type, astNode n1) {
 	n->type = type;
 	if(UNARYMINUS_EX <= type && type <= NOT_EX) {
 		n->primType = unaryExpressionType( n1->primType, toOpType(type) );
+		char *tempName = nextTempName();
+		n->location =  createSymbolNode( tempName, PRIMITIVE, createLiteralType(n->primType) );
+		addSymbol( localTable, n->location );
 	} else {
 		n->primType = VOID_TYPE;
+		n->location = NULL;
 	}
 	n->child0 = n1;
 	return (astNode *) n;
@@ -453,8 +453,12 @@ astNode makeASTNode(NodeType type, astNode n1, astNode n2) {
 	n->type = type;
 	if(CONSTANT_EX <= type && type <= GREATER_EX) {
 		n->primType = binaryExpressionType( n1->primType, n2->primType, toOpType(type) );
+		char *tempName = nextTempName();
+		n->location =  createSymbolNode( tempName, PRIMITIVE, createLiteralType(n->primType) );
+		addSymbol( localTable, n->location );
 	} else {
 		n->primType = VOID_TYPE;
+		n->location = NULL;
 	}
 	n->child0 = n1;
 	n->child1 = n2;
@@ -465,22 +469,38 @@ astNode makeASTNode(NodeType type, astNode n1, astNode n2, astNode n3) {
 	astNode3 *n = malloc(sizeof(astNode3));
 	n->type = type;
 	n->primType = VOID_TYPE;
+	n->location = NULL;
 	n->child0 = n1;
 	n->child1 = n2;
 	n->child2 = n3;
 	return (astNode *) n;
 }
 
+astNode makeASTNode(NodeType type, astNode n1, astNode n2, astNode n3, astNode n4) {
+	astNode4 *n = malloc(sizeof(astNode4));
+	n->type = type;
+	n->primType = VOID_TYPE;
+	n->location = NULL;
+	n->child0 = n1;
+	n->child1 = n2;
+	n->child2 = n3;
+	n->child3 = n4;
+	return (astNode *) n;
+}
+
 astNode makeIdNode(symbolNode symNode) {
 	idNode *n = malloc(sizeof(idNode));
 	n->type = ID_EX;
-	n->id = symNode;
+	n->location = symNode;
 	return (astNode *) n;
 }
 
 astNode makeIntconNode(int val) {
 	intconNode *n = malloc(sizeof(intconNode));
 	n->type = INT_EX;
+	char *tempName = nextTempName();
+	n->location =  createSymbolNode( tempName, PRIMITIVE, createLiteralType(INT_TYPE) );
+	addSymbol( localTable, n->location );
 	n->value = val;
 	return (astNode *) n;
 }
@@ -488,6 +508,9 @@ astNode makeIntconNode(int val) {
 astNode makeFloatconNode(double val) {
 	floatconNode *n = malloc(sizeof(floatconNode));
 	n->type = FLOAT_EX;
+	char *tempName = nextTempName();
+	n->location =  createSymbolNode( tempName, PRIMITIVE, createLiteralType(FLOAT_TYPE) );
+	addSymbol( localTable, n->location );
 	n->value = val;
 	return (astNode *) n;
 }
@@ -495,8 +518,18 @@ astNode makeFloatconNode(double val) {
 astNode makeCharconNode(char val) {
 	charconNode *n = malloc(sizeof(charconNode));
 	n->type = CHAR_EX;
+	char *tempName = nextTempName();
+	n->location =  createSymbolNode( tempName, PRIMITIVE, createLiteralType(CHAR_TYPE) );
+	addSymbol( localTable, n->location );
 	n->value = val;
 	return (astNode *) n;
+}
+
+char *nextTempName() {
+	int bufsize = 10;
+	char buf[bufsize];
+	snprintf(buf,bufsize,"%d",tempNum++);
+	return strcat("_t",buf);
 }
 
 

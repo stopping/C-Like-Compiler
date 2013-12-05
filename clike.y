@@ -38,7 +38,7 @@
 %type <idlist_ptr> id_list comma_id_star;
 %type <idlist_ptr> expr_list comma_expr_star expr_list_opt;
 %type <astnode_ptr> expr expr_opt stmt;
-%type <litType> type void_type;
+%type <primType> type void_type;
 
 %left OR
 %left AND
@@ -165,9 +165,11 @@ loc_dcl_star
 
 stmt_semicolon_star
 : stmt_semicolon_star stmt SEMICOLON
+	{ $$ = makeASTNode( LIST_ST, $1, $2 ); }
 | stmt_semicolon_star error SEMICOLON
 	{ yyerror("Invalid statement"); }
 | /* eps */
+	{ $$ = NULL; }
 
 loc_dcl
 : type
@@ -188,35 +190,41 @@ comma_id_star
 
 stmt
 : IF LPAREN expr RPAREN stmt 
-	{ areCompatible( $3, BOOL_TYPE ); }
+	{ $$ = makeASTNode( IF_ST, $3, $5, NULL ); areCompatible( $3, BOOL_TYPE ); }
 | IF LPAREN expr RPAREN stmt ELSE stmt
-	{ areCompatible( $3, BOOL_TYPE ); }
+	{ $$ = makeASTNode( IF_ST, $3, $5, $7 ); areCompatible( $3, BOOL_TYPE ); }
 | WHILE LPAREN expr RPAREN stmt_opt
-	{ areCompatible( $3, BOOL_TYPE ); }
+	{ $$ = makeASTNode( WHILE_ST, $3, $5 ); areCompatible( $3, BOOL_TYPE ); }
 | FOR LPAREN assg_opt SEMICOLON expr_opt SEMICOLON assg_opt RPAREN stmt_opt
-	{ areCompatible( $5, BOOL_TYPE ); }
+	{ $$ = makeASTNode( FOR_ST, $3, $5, $7, $9 ); areCompatible( $5, BOOL_TYPE ); }
 | RETURN
-	{ areCompatible( VOID_TYPE, returnType ); hasReturn = true; }
+	{ $$ = makeASTNode( RETURN_ST ); areCompatible( VOID_TYPE, returnType ); hasReturn = true; }
 | RETURN expr
-	{ areCompatible( $2, returnType ); hasReturn = true; }
+	{ $$ = makeASTNode( RETURN_ST, $2 ); areCompatible( $2, returnType ); hasReturn = true; }
 | assg
+	{ $$ = $1; }
 | ID LPAREN expr_list_opt RPAREN
-	{ isValidFunctionCall( $1, $3 ); isSymbolType( $1, FUNCTION ); areCompatible( literalTypeOf( $1 ), VOID_TYPE ); destroyIdList( $3 ); free($1); }
+	{ $$ = makeASTNode( FUNCALL_ST, $2 ); isValidFunctionCall( $1, $3 ); isSymbolType( $1, FUNCTION ); areCompatible( literalTypeOf( $1 ), VOID_TYPE ); destroyIdList( $3 ); free($1); }
 | LCURLY stmt_semicolon_star RCURLY
+	{ $$ = $2; }
 
 stmt_opt
 : stmt
+	{ $$ = $1 }
 | /* eps */
+	{ $$ = NULL }
 
 assg_opt
 : assg
+	{ $$ = $1 }
 | /* eps */
+	{ $$ = NULL }
 
 expr_opt
 : expr
 	{ $$ = $1; }
 | /* eps */
-	{ $$ = NONE_TYPE; }
+	{ $$ = NULL; }
 
 expr_list_opt
 : expr_list
@@ -226,19 +234,21 @@ expr_list_opt
 
 expr_list
 : expr comma_expr_star
-	{ $$ = createIdList( NULL, $1, $2 ); }
+	{ $$ = makeASTNode( COMMA_EX, $1, $2 ); }
+	//{ $$ = createIdList( NULL, $1, $2 ); }
 
 comma_expr_star
 : comma_expr_star COMMA expr
-	{ $$ = createIdList( NULL, $3, $1 ); }
+	{ $$ = makeASTNode( COMMA_EX, $1, $3 ); }
+	//{ $$ = createIdList( NULL, $3, $1 ); }
 | /* eps */
 	{ $$ = NULL; }
 
 assg
 : ID ASSIGN expr
-	{ areCompatible( literalTypeOf( $1 ), $3 ); isSymbolType( $1, LITERAL ); free($1); }
+	{ $$ = makeASTNode( ASSIGN_ST, makeIDNode(getSymbol(localTable, $1, PRIMITIVE)), $3); areCompatible( literalTypeOf( $1 ), $3 ); isSymbolType( $1, LITERAL ); free($1); }
 | ID LBRACK expr RBRACK ASSIGN expr
-	{ areCompatible( literalTypeOf( $1 ), $6 ); isSymbolType( $1, ARRAY ); areCompatible( $3, INT_TYPE ); free($1); }
+	{ $$ = makeASTNode( ASSIGN_ST, makeASTNode( ARRAY_EX, makeIdNode(getSymbol( localTable, $1, ARRAY )), $3 ), $6); areCompatible( literalTypeOf( $1 ), $6 ); isSymbolType( $1, ARRAY ); areCompatible( $3, INT_TYPE ); free($1); }
 
 expr
 : NOT expr { $$ = makeASTNode( NOT_EX, $2 ); }
@@ -256,8 +266,8 @@ expr
 | expr GEQ expr { $$ = makeASTNode( GEQ_EX, $1, $3 ); }
 | expr GREATER expr { $$ = makeASTNode( GREATER_EX, $1, $3 ); }
 | ID { $$ = makeIdNode(getSymbol( localTable, $1, PRIMITIVE )); isSymbolType( $1, PRIMITIVE ); free($1); }
-| ID LBRACK expr RBRACK { $$ = makeIdNode(getSymbol( localTable, $1, ARRAY )); isSymbolType( $1, ARRAY ); areCompatible( $3, INT_TYPE ); free($1); }
-| ID LPAREN expr_list_opt RPAREN { $$ = makeIdNode(getSymbol( globalTable, $1, FUNCTION )); isSymbolType( $1, FUNCTION ); isValidFunctionCall( $1, $3 ); destroyIdList( $3 ); free($1); }
+| ID LBRACK expr RBRACK { $$ = makeASTNode( ARRAY_EX, makeIdNode(getSymbol( localTable, $1, ARRAY )), $3 ); isSymbolType( $1, ARRAY ); areCompatible( $3, INT_TYPE ); free($1); }
+| ID LPAREN expr_list_opt RPAREN { $$ = makeASTNode( FUNCALL_EX, makeIdNode(getSymbol( globalTable, $1, FUNCTION )), $3 ); isSymbolType( $1, FUNCTION ); isValidFunctionCall( $1, $3 ); destroyIdList( $3 ); free($1); }
 | LPAREN expr RPAREN { $$ = $2; }
 | INTCON { $$ = makeIntconNode($1); }
 | FLOATCON { $$ = makeFloatconNode($1); }

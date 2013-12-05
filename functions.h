@@ -36,6 +36,7 @@ typedef enum {
 
 typedef enum {
 	// Expressions
+	COMMA_EX,
 	CONSTANT_EX,
 	ID_EX,
 	INT_EX,
@@ -64,7 +65,7 @@ typedef enum {
 	RETURN_ST,
 	ASSIGN_ST,
 	FUNCALL_ST,
-
+	LIST_ST
 } NodeType;
 
 typedef enum {
@@ -74,6 +75,7 @@ typedef enum {
 int error = 0;
 int currType;
 int returnType;
+int tempNum = 0; // Indicates the next temporary variable which can be used
 
 typedef struct symbolNode symbolNode;
 struct symbolNode {
@@ -116,55 +118,82 @@ typedef struct fprotType {
 typedef struct astNode {
 	NodeType type;
 	PrimitiveType primType;
+	symbolNode *location;
 } astNode;
 
 typedef struct astNode1 {
 	NodeType type;
 	PrimitiveType primType;
-	astNode child0;
+	symbolNode *location;
+	astNode *child0;
 } astNode1;
 
 typedef struct astNode2 {
 	NodeType type;
 	PrimitiveType primType;
-	astNode child0;
-	astNode child1;
+	symbolNode *location;
+	astNode *child0;
+	astNode *child1;
 } astNode2;
 
 typedef struct astNode3 {
 	NodeType type;
 	PrimitiveType primType;
-	astNode child0;
-	astNode child1;
-	astNode child2;
+	symbolNode *location;
+	astNode *child0;
+	astNode *child1;
+	astNode *child2;
 } astNode3;
+
+typedef struct astNode4 {
+	NodeType type;
+	PrimitiveType primType;
+	symbolNode *location;
+	astNode *child0;
+	astNode *child1;
+	astNode *child2;
+	astNode *child3;
+} astNode4;
 
 typedef struct idNode {
 	NodeType type;
 	PrimitiveType primType;
-	symbolNode id;
+	symbolNode *location;
 } idNode;
 
 typedef struct intconNode {
 	NodeType type;
 	PrimitiveType primType;
+	symbolNode *location;
 	int value;
 } intconNode;
 
 typedef struct floatconNode {
 	NodeType type;
 	PrimitiveType primType;
+	symbolNode *location;
 	double value;
 } floatconNode;
 
 typedef struct charconNode {
 	NodeType type;
 	PrimitiveType primType;
+	symbolNode *location;
 	char value;
 } charconNode;
 
+typedef struct quad {
+	NodeType type;
+	symbolNode *src1;
+	symbolNode *src2;
+	symbolNode *dest;
+	quad *prevQuad;
+	quad *nextQuad;
+} quad;
+
 symbolTable *globalTable;
 symbolTable *localTable;
+quad *quadList;
 
 idList *createIdList( char *symbol, PrimitiveType type, idList *nextID );
 void destroyIdList( idList *list );
@@ -203,6 +232,7 @@ bool areCompatible( PrimitiveType t1, PrimitiveType t2 );
 bool isValidFunctionCall( char *symbol, idList *list );
 bool isSymbolType( char *symbol, SymbolType t );
 void checkReturn();
+int hash( char *str );
 
 void yyerror(char *s);
 
@@ -213,9 +243,15 @@ astNode makeASTNode(NodeType type);
 astNode makeASTNode(NodeType type, astNode n1);
 astNode makeASTNode(NodeType type, astNode n1, astNode n2);
 astNode makeASTNode(NodeType type, astNode n1, astNode n2, astNode n3);
+astNode makeASTNode(NodeType type, astNode n1, astNode n2, astNode n3, astNode n4);
 astNode makeIdNode(symbolNode symNode);
 astNode makeIntconNode(int val);
 astNode makeFloatconNode(double val);
 astNode makeCharconNode(char val);
+char *nextTempName();
+
+// Quad List Construction
+
+
 
 #endif
