@@ -4,7 +4,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
-#include "structures.h"
+#include "functions.h"
 #include "clike.tab.h"
 
 int lineNumber = 1;
